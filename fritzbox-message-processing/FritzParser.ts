@@ -102,18 +102,37 @@ class FritzParser {
             }
         }
 
+        console.log("processing ", this.report.receiver, " : ", mail.getSubject())
+
         this.parseConfig = {
             configPointer: -1
         }
 
         this.performParsing();
-        this.printReport();
+        //this.printReport();
         this.writeToSheet();
     }
 
     performParsing() {
-        let htmlInput = this.mail.getBody().replace("<!DOCTYPE html>", "<!DOCTYPE test [ <!ENTITY nbsp \"&#160;\"> ]>");
-        let doc = XmlService.parse(htmlInput);
+        let htmlInput = '<!DOCTYPE test [ <!ENTITY nbsp \"&#160;\"> ]>' + this.mail.getBody();
+
+        htmlInput = htmlInput.replace(/<!DOCTYPE html>/g, '')
+            .replace('<meta http-equiv=\"content-type\" content=\"text/html;charset=utf-8\" class=\"\">', '')
+            .replace('<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">', '')
+            .replace(/( class=""|<img .*>|<hr.*>)+/g, '')
+            .replace(/(<br>|<br class="Apple-interchange-newline">|<br class=""Apple-interchange-newline"">)/g, '<br/>')
+            //.replace(/<td.*>  \n<\/tr>/g, '</tr>');
+
+
+        //console.log("***** ", htmlInput);
+
+        let doc: GoogleAppsScript.XML_Service.Document;
+        try {
+            doc = XmlService.parse(htmlInput)
+        } catch (e) {
+            this.testWrite([this.mail.getDate().toDateString(), this.mail.getBody(), htmlInput]);
+            throw ("error prasing htmlInput " + e);
+        }
 
         if (this.report.receiver === Config.MAIL_BIN18) {
             this.parseConfig.configPointer = 10
@@ -136,10 +155,10 @@ class FritzParser {
     }
 
     parseConfiguration(elements: GoogleAppsScript.XML_Service.Element[]) {
-        let header = elements[1].getChildren()[0].getChildren()[0].getChildren()[0].getChildren()[0].getChildren()[this.parseConfig.configPointer].getChildren()[0].getChildren()[0].getChildren()[0].getChildren()[0].getChildren()[0].getChildren()[0].getChildren()[0];
-        this.report.dateTime = this.parseDateTimeString(header.getValue().trim());
-
         try {
+            let header = elements[1].getChildren()[0].getChildren()[0].getChildren()[0].getChildren()[0].getChildren()[this.parseConfig.configPointer].getChildren()[0].getChildren()[0].getChildren()[0].getChildren()[0].getChildren()[0].getChildren()[0].getChildren()[0];
+            this.report.dateTime = this.parseDateTimeString(header.getValue().trim());
+
             let structure = elements[1].getChildren()[0].getChildren()[0].getChildren()[0].getChildren()[0].getChildren()[this.parseConfig.configPointer].getChildren()[0].getChildren()[0].getChildren()[1].getChildren()[0].getChildren()[0].getChildren()[0].getChildren()[0].getChildren()[0];
 
             this.report.configuration.product = structure.getChildren()[0].getChildren()[1].getValue().trim();
@@ -147,6 +166,7 @@ class FritzParser {
             this.report.configuration.powerConsumption = parseFloat(structure.getChildren()[10].getChildren()[1].getValue().trim().match(this.regexNumber)[0]);
             this.report.configuration.lastRestart = this.parseDateTimeString(structure.getChildren()[11].getChildren()[1].getValue().trim());
         } catch (e) {
+            this.testWrite([this.mail.getDate().toDateString(), e, this.mail.getPlainBody(), this.mail.getBody()]);
             console.log("#2", "couldn't parse ", e)
             Logger.log("#2", "couldn't parse ", e);
         }
@@ -260,20 +280,17 @@ class FritzParser {
     printReport() {
 
         console.log('############\n',
-            /*            '\nyesterdaySum: ', this.report.yesterdaySum,
-                        '\nyesterdaySent: ', this.report.yesterdaySent,
-                        '\nyesterdayReceived: ', this.report.yesterdayReceived,
-                        '\nlastWeekSum: ', this.report.lastWeekSum,
-                        '\nlastWeekSent: ', this.report.lastWeekSent,
-                        '\nlastWeekReceived: ', this.report.lastWeekReceived,
-                        '\nlastMonthSum: ', this.report.lastMonthSum,
-                        '\nlastMonthSent: ', this.report.lastMonthSent,
-                        '\nlastMonthReceived: ', this.report.lastMonthReceived, */
             '\ndateTime: ', this.report.dateTime,
+            '\nreceiver: ', this.report.receiver, '\n',
             JSON.stringify(this.report.onlineCounter), "\n -----\n",
             JSON.stringify(this.report.dslInformation), "\n -----\n",
             JSON.stringify(this.report.configuration)
         );
+    }
+
+    testWrite(dataToWrite: string[]) {
+        let sheet: GoogleAppsScript.Spreadsheet.Sheet = SpreadsheetApp.getActiveSheet();
+        sheet.appendRow(dataToWrite);
     }
 
     writeToSheet() {
